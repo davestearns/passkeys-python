@@ -1,6 +1,13 @@
-def main():
-    print("Hello from passkeys-python!")
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+
+from src.api import susi
+from src.dependencies import lifespan
+
+app = FastAPI(lifespan=lifespan)
+app.include_router(susi.router)
 
 
-if __name__ == "__main__":
-    main()
+@app.get("/")
+def get_root() -> FileResponse:
+    return FileResponse(path="./src/static/susi.html")

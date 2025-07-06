@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Passkeys Demo</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+</head>
+
+<body>
+    <div class="container">
+        <h1>Passkeys Demo</h1>
+        <p>Test Email Address: <span id="email"></span></p>
+        <p>
+            <button id="btn_sign_up" class="btn waves-effect waves-light">Sign Up</button>
+        </p>
+        <p>
+            <button id="btn_sign_in" class="btn waves-effect waves-light">Sign In</button>
+        </p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+    <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            email = crypto.randomUUID() + "@test.com";
+            document.getElementById("email").innerText = email
+        })
+
+        document.getElementById("btn_sign_up").addEventListener("click", async () => {
+            const email = document.getElementById("email").innerText
+            const accounts_resp = await fetch("/accounts", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    email: email, 
+                    display_name: "Tester" 
+                })
+            });
+            const accounts_resp_json = await accounts_resp.json()
+            console.log(accounts_resp_json)
+
+            const authenticator_resp = await SimpleWebAuthnBrowser.startRegistration({
+                optionsJSON: accounts_resp_json.passkey_creation_options
+            })
+            console.log(authenticator_resp)
+            
+            const credentials_resp = await fetch(`/accounts/${accounts_resp_json.account.id}/credentials`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ 
+                    challenge_id: accounts_resp_json.challenge_id,
+                    credential_json: authenticator_resp
+                })
+            })
+            console.log(credentials_resp)
+            alert(`Signed Up Successfully as ${accounts_resp_json.account.email}`)
+        })
+
+        document.getElementById("btn_sign_in").addEventListener("click", async () => {
+            const email = document.getElementById("email").innerText
+            const challenges_resp = await fetch("/sessions/challenges", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    email: email 
+                })
+            });
+            const challenges_resp_json = await challenges_resp.json()
+            console.log(challenges_resp_json)
+
+            const authenticator_resp = await SimpleWebAuthnBrowser.startAuthentication({
+                optionsJSON: challenges_resp_json.passkey_authentication_options
+            })
+            console.log(authenticator_resp)
+
+            const sessions_resp = await fetch("/sessions", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    account_id: challenges_resp_json.account_id,
+                    challenge_id: challenges_resp_json.challenge_id,
+                    credential_json: authenticator_resp
+                })
+            })
+
+            const sessions_resp_json = await sessions_resp.json()
+            console.log(sessions_resp_json)
+            alert(`Signed In Successfully as ${sessions_resp_json.account.email}`)
+        })
+    </script>
+</body>
+
+</html>

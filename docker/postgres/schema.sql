@@ -17,22 +17,27 @@ create table identity.accounts (
 -- These are immutable, and will typically be deleted
 -- after they are confirmed. They may also expire.
 create table identity.challenges (
-    challenge bytea not null primary key,
+    id text not null primary key,
+    value bytea not null,
     account_id text not null references identity.accounts(id),
     expires_at timestamp with time zone not null,
     created_at timestamp with time zone not null default now()
 );
 
 -- Types of credentials currently supported
-create type identity.credential_type as enum ('passkey');
+create type identity.credential_type as enum ('PASSKEY');
 
--- Credentials for accounts. These are immutable, but
--- may be revoked, and later deleted.
+-- Credentials for accounts. The use_count and revoked_at
+-- fields may be updated but are done so idempotently.
 create table identity.credentials (
-    id text not null primary key,
+    id bytea not null primary key,
     account_id text not null references identity.accounts(id),
     type identity.credential_type not null,
     value bytea not null,
+    use_count bigint not null default 0,
     created_at timestamp with time zone not null default now(),
     revoked_at timestamp with time zone
 );
+
+-- For fast selection of an account's existing credentials.
+create index account_credentials_idx on identity.credentials(account_id, created_at);
