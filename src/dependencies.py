@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
             store=store,
             relying_party_id="localhost",
             relying_party_name="Local Passkey Demo",
-            origins=["http://localhost:8000"],
+            origins=["https://localhost:8000"],
             session_signing_keys=server_settings.session_signing_keys,
         )
         yield

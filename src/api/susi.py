@@ -197,6 +197,7 @@ async def create_session(
         key=SESSION_COOKIE_NAME,
         value=session.token,
         httponly=True,
+        secure=True,  # Setting this requires you to run https even on localhost!
         max_age=(session.expires_at - datetime.now(timezone.utc)).seconds,
     )
     account = session.account
