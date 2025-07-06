@@ -32,6 +32,13 @@ CREDENTIAL_TYPE_ENUM = f"{SCHEMA_NAME}.credential_type"
 class PostgresIdentityStore:
     @classmethod
     async def create(cls, pool: AsyncConnectionPool) -> "PostgresIdentityStore":
+        """
+        Creates a new instance: use this instead of the normal constructor.
+
+        This is necessary for registering the :class:`CredentialType` enum
+        with the parallel enum defined in the database. This teaches psycopg
+        how to serialize and deserialize columns of that type.
+        """
         # Register the CredentialType enum
         async with pool.connection() as conn:
             enum_info = await EnumInfo.fetch(conn, CREDENTIAL_TYPE_ENUM)
@@ -78,7 +85,7 @@ class PostgresIdentityStore:
             # multiple statements with parameters in the
             # the same batch query. So we have to insert the
             # account and challenges separately. The psycopg library
-            # will automatically do these under a database transaction.
+            # will automatically do these under the same database transaction.
             # https://www.psycopg.org/psycopg3/docs/basic/transactions.html
             account_params = [getattr(account, f.name) for f in fields(account)]
             try:

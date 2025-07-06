@@ -106,8 +106,22 @@ class IdentityService:
         relying_party_id: str,
         relying_party_name: str,
         origins: list[str],
-        challenge_duration: timedelta = timedelta(minutes=5),
+        challenge_duration: timedelta = timedelta(minutes=2),
     ):
+        """
+        Creates a new instance of the service.
+
+        Parameters:
+            store: The IdentityStore to use.
+            relying_party_id: Must be the base domain for the server
+                (e.g., 'localhost' or 'myservice.com').
+            relying_party_name: A descriptive name that will show up in the
+                operating system passkey prompts.
+            origins: A list of allowed web client origins
+                (e.g., 'http://localhost:8000').
+            challenge_duration: How long before challenges expire
+                (defaults to 2 minutes).
+        """
         self._store = store
         self._challenge_duration = challenge_duration
         self._relying_party_id = relying_party_id
@@ -115,6 +129,14 @@ class IdentityService:
         self._origins = origins
 
     async def create_account(self, new_account: NewAccount) -> CreateAccountOutcome:
+        """
+        Creates a new Account and new passkey registration options.
+
+        Serialize the registration options to the client as JSON using the
+        `options_to_json_dict()` helper method from the webauthn library.
+        Use the add_passkey_credential() method to add the passkey when
+        the client posts the response from the authenticator.
+        """
         new_account_record = NewAccountRecord(
             id=AccountID(),
             email=new_account.email,
@@ -153,6 +175,11 @@ class IdentityService:
     async def create_registration_challenge(
         self, account_id: AccountID
     ) -> RegistrationChallenge:
+        """
+        Creates new passkey registration options for an existing account.
+
+        Use this when adding another passkey to an existing account.
+        """
         account_record = await self._store.get_account_by_id(account_id)
         if account_record is None:
             raise InvalidAccountError(f"Account ID '{account_id}' not found.")
@@ -184,6 +211,10 @@ class IdentityService:
         challenge_id: ChallengeID,
         credential: RegistrationCredential,
     ) -> None:
+        """
+        Verifies the provided `RegistrationCredential` against the
+        specified challenge and adds the passkey to the specified account.
+        """
         # Ensure the challenge was connected to the account
         # and not yet expired.
         challenge = await self._store.get_challenge(challenge_id)
@@ -207,6 +238,15 @@ class IdentityService:
     async def create_authentication_challenge(
         self, email: str
     ) -> AuthenticateChallenge:
+        """
+        Creates a new authentication challenge for the specified account.
+
+        When you want to authenticate an account holder, start by calling
+        this method passing the account email address. This returns passkey
+        authentication options to send to the client. When the client sends
+        the authenticator's response, call the `authenticate()` method to
+        complete authentication.
+        """
         account = await self._store.get_account_by_email(email)
         if account is None:
             raise InvalidAccountError(f"No account with email `{email}`")
@@ -238,6 +278,10 @@ class IdentityService:
         challenge_id: ChallengeID,
         credential: AuthenticationCredential,
     ) -> Account:
+        """
+        Verifies the `AuthenticationCredential` against the specified challenge
+        for the specified account, and completes authentication.
+        """
         account_record = await self._store.get_account_by_id(account_id)
         if account_record is None:
             raise InvalidAccountError(f"No account with id `{account_id}`")
