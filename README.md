@@ -30,7 +30,23 @@ openssl req -x509 -newkey rsa:4096 -nodes \
   -subj "/CN=localhost"
 ```
 
-Start the server using this command:
+Create a `.env` file in the repo directory with the following content, changing
+the `POSTGRES_PASSWORD` to something you want to use as your local Postgres
+server password, and `SESSION_SIGNING_KEYS` to keys you want to use when HMAC
+signing session tokens:
+
+```env
+POSTGRES_PASSWORD=local-password
+POSTGRES_DSN=postgresql://postgres:${POSTGRES_PASSWORD}@localhost:5432
+SESSION_SIGNING_KEYS=["secret_key_1","secret_key_2","secret_key_3"]
+```
+
+The Postgres database is run via Docker, so install and run
+[Docker Desktop](https://www.docker.com/) if you don't already have it. Then
+start the Postgres database using `docker compose up`. This will take over that
+terminal window, but also allow you to see log output while it runs.
+
+In a different terminal window, start the server using this command:
 
 ```bash
 uvicorn src.main:app --ssl-keyfile key.pem --ssl-certfile cert.pem
@@ -52,6 +68,15 @@ buttons.
 The client-side JavaScript has limited error handling, so you might want to open
 the developer tools console so you can see any errors. The script also logs the
 various responses it gets back from the APIs.
+
+Use `ctrl+c` to shut down both the API server and the docker container. Then use
+these commands to delete the docker container and clean up temporary volumes
+used by it:
+
+```bash
+docker compose down
+docker system prune --volumes
+```
 
 ## Code Organization
 
