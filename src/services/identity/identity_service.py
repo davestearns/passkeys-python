@@ -16,6 +16,7 @@ from webauthn.helpers.structs import (
     RegistrationCredential,
 )
 
+from src.lib.tokens import TokenSigner, Token
 from src.services.identity.stores.identity_store import (
     AccountID,
     AccountRecord,
@@ -25,6 +26,8 @@ from src.services.identity.stores.identity_store import (
     NewAccountRecord,
     NewChallengeRecord,
     NewCredentialRecord,
+    SessionID,
+    NewSessionRecord,
 )
 
 
@@ -53,25 +56,33 @@ class Account:
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class CreateAccountOutcome:
     account: Account
     challenge_id: ChallengeID
     passkey_creation_options: PublicKeyCredentialCreationOptions
 
 
-@dataclass
+@dataclass(frozen=True)
 class RegistrationChallenge:
     account_id: AccountID
     challenge_id: ChallengeID
     passkey_creation_options: PublicKeyCredentialCreationOptions
 
 
-@dataclass
+@dataclass(frozen=True)
 class AuthenticateChallenge:
     account_id: AccountID
     challenge_id: ChallengeID
     passkey_authentication_options: PublicKeyCredentialRequestOptions
+
+
+@dataclass(frozen=True)
+class Session:
+    id: SessionID
+    token: Token
+    account: Account
+    expires_at: datetime
 
 
 class ChallengeExpiredError(Exception):
@@ -93,11 +104,18 @@ class InvalidCredentialError(Exception):
     """
 
 
+class SessionExpiredError(Exception):
+    """
+    Raised when a specified session has expired.
+    """
+
+
 class IdentityService:
     _store: IdentityStore
     _challenge_duration: timedelta
     _relying_party_id: str
     _relying_party_name: str
+    _session_token_signer: TokenSigner
     _origins: list[str]
 
     def __init__(
@@ -106,7 +124,9 @@ class IdentityService:
         relying_party_id: str,
         relying_party_name: str,
         origins: list[str],
+        session_signing_keys: list[bytes],
         challenge_duration: timedelta = timedelta(minutes=2),
+        session_duration: timedelta = timedelta(days=1),
     ):
         """
         Creates a new instance of the service.
@@ -119,14 +139,19 @@ class IdentityService:
                 operating system passkey prompts.
             origins: A list of allowed web client origins
                 (e.g., 'http://localhost:8000').
+            session_signing_keys: A list of keys for signing session tokens
             challenge_duration: How long before challenges expire
                 (defaults to 2 minutes).
+            session_duration: How long authenticated sessions should last
+                (defaults to 1 day).
         """
         self._store = store
         self._challenge_duration = challenge_duration
         self._relying_party_id = relying_party_id
         self._relying_party_name = relying_party_name
         self._origins = origins
+        self._session_token_signer = TokenSigner(session_signing_keys)
+        self._session_duration = session_duration
 
     async def create_account(self, new_account: NewAccount) -> CreateAccountOutcome:
         """
@@ -277,7 +302,7 @@ class IdentityService:
         account_id: AccountID,
         challenge_id: ChallengeID,
         credential: AuthenticationCredential,
-    ) -> Account:
+    ) -> Session:
         """
         Verifies the `AuthenticationCredential` against the specified challenge
         for the specified account, and completes authentication.
@@ -307,7 +332,42 @@ class IdentityService:
             credential_public_key=credential_record.value,
             credential_current_sign_count=credential_record.use_count,
         )
+
         await self._store.update_credential_use_count(
             credential_record.id, verified.new_sign_count
         )
-        return Account.from_record(account_record)
+
+        new_session = NewSessionRecord(
+            id=SessionID(),
+            account_id=account_record.id,
+            expires_at=datetime.now(timezone.utc) + self._session_duration,
+        )
+        session = await self._store.create_session(new_session)
+        token = self._session_token_signer.sign(session.id.encode("ascii"))
+
+        return Session(
+            id=session.id,
+            token=token,
+            account=Account.from_record(account_record),
+            expires_at=session.expires_at,
+        )
+
+    async def verify_session(self, token: Token) -> Session:
+        session_id_bytes = self._session_token_signer.verify(token)
+        session_id = SessionID(session_id_bytes.decode("ascii"))
+        session_with_account_record = await self._store.get_session(session_id)
+        if session_with_account_record is None:
+            raise SessionExpiredError()
+
+        return Session(
+            id=session_with_account_record.id,
+            token=token,
+            account=Account(
+                id=session_with_account_record.account_id,
+                email=session_with_account_record.account_email,
+                display_name=session_with_account_record.account_display_name,
+                created_at=session_with_account_record.account_created_at,
+                updated_at=session_with_account_record.account_updated_at,
+            ),
+            expires_at=session_with_account_record.expires_at,
+        )

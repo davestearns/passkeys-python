@@ -14,6 +14,11 @@ class ChallengeID(BaseID):
     PREFIX = "ch"
 
 
+class SessionID(BaseID):
+    PREFIX = "sn"
+    ORDERED = False
+
+
 @dataclass(frozen=True)
 class NewAccountRecord:
     id: AccountID
@@ -77,6 +82,34 @@ class CredentialRecord:
 class CreateAccountOutcome:
     account: AccountRecord
     challenge: ChallengeRecord | None
+
+
+@dataclass(frozen=True)
+class NewSessionRecord:
+    id: SessionID
+    account_id: AccountID
+    expires_at: datetime
+
+
+@dataclass(frozen=True)
+class SessionRecord:
+    id: SessionID
+    account_id: AccountID
+    expires_at: datetime
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class SessionWithAccountRecord:
+    id: SessionID
+    account_id: AccountID
+    created_at: datetime
+    expires_at: datetime
+    account_email: str
+    account_display_name: str
+    account_created_at: datetime
+    account_updated_at: datetime
+    account_version: int
 
 
 class EmailAlreadyExistsError(Exception):
@@ -159,4 +192,16 @@ class IdentityStore(Protocol):
     async def update_credential_use_count(self, id: bytes, new_count: int) -> None:
         """
         Updates the use count for a credential, to help detect replay attacks.
+        """
+
+    async def create_session(self, new_session: NewSessionRecord) -> SessionRecord:
+        """
+        Creates a new session.
+        """
+
+    async def get_session(
+        self, session_id: SessionID, included_expired: bool = False
+    ) -> SessionWithAccountRecord | None:
+        """
+        Gets the specified session with related account details.
         """

@@ -20,6 +20,10 @@ from src.services.identity.stores.identity_store import (
     NewAccountRecord,
     NewChallengeRecord,
     NewCredentialRecord,
+    NewSessionRecord,
+    SessionID,
+    SessionRecord,
+    SessionWithAccountRecord,
 )
 
 SCHEMA_NAME = "identity"
@@ -27,6 +31,8 @@ ACCOUNTS_TABLE = f"{SCHEMA_NAME}.accounts"
 CHALLENGES_TABLE = f"{SCHEMA_NAME}.challenges"
 CREDENTIALS_TABLE = f"{SCHEMA_NAME}.credentials"
 CREDENTIAL_TYPE_ENUM = f"{SCHEMA_NAME}.credential_type"
+SESSIONS_TABLE = f"{SCHEMA_NAME}.sessions"
+SESSIONS_VIEW = f"{SCHEMA_NAME}.sessions_with_account"
 
 
 class PostgresIdentityStore:
@@ -53,6 +59,10 @@ class PostgresIdentityStore:
         self._accounts_sql = SqlGenerator(ACCOUNTS_TABLE, AccountRecord)
         self._challenges_sql = SqlGenerator(CHALLENGES_TABLE, ChallengeRecord)
         self._credentials_sql = SqlGenerator(CREDENTIALS_TABLE, CredentialRecord)
+        self._sessions_sql = SqlGenerator(SESSIONS_TABLE, SessionRecord)
+        self._sessions_with_account_sql = SqlGenerator(
+            SESSIONS_VIEW, SessionWithAccountRecord
+        )
 
     async def create_account(
         self,
@@ -140,7 +150,7 @@ class PostgresIdentityStore:
         sql = (
             self._challenges_sql.select_by_id_sql
             if include_expired
-            else self._challenges_sql.select_by_id_sql + " and expires_at >= now()"
+            else self._challenges_sql.select_by_id_sql + " and expires_at > now()"
         )
         return await self._fetch_one(sql, [id], ChallengeRecord)
 
@@ -189,6 +199,33 @@ class PostgresIdentityStore:
                 f"update {CREDENTIALS_TABLE} set use_count=%s where id=%s",
                 [new_count, id],
             )
+
+    async def create_session(self, new_session: NewSessionRecord) -> SessionRecord:
+        session = SessionRecord(
+            id=new_session.id,
+            account_id=new_session.account_id,
+            expires_at=new_session.expires_at,
+            created_at=datetime.now(timezone.utc),
+        )
+        params = [getattr(session, f.name) for f in fields(session)]
+        async with self._pool.connection() as conn:
+            await conn.execute(self._sessions_sql.insert_sql, params)
+            return session
+
+    async def get_session(
+        self, session_id: SessionID, included_expired: bool = False
+    ) -> SessionWithAccountRecord | None:
+        sql = (
+            self._sessions_with_account_sql.select_by_id_sql
+            if included_expired
+            else self._sessions_with_account_sql.select_by_id_sql
+            + " and expires_at > now()"
+        )
+        return await self._fetch_one(
+            sql,
+            [session_id],
+            SessionWithAccountRecord,
+        )
 
     async def _fetch_one[T](
         self, sql: str, params: Sequence[Any], cls: Type[T]

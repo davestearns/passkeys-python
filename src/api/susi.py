@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, EmailStr, Field
 from webauthn.helpers import (
     options_to_json_dict,
@@ -9,12 +9,13 @@ from webauthn.helpers import (
     parse_registration_credential_json,
 )
 
-from src.dependencies import identity_service
+from src.dependencies import identity_service, session, SESSION_COOKIE_NAME
 from src.services.identity.identity_service import (
     IdentityService,
     InvalidAccountError,
     InvalidCredentialError,
     NewAccount,
+    Session,
 )
 from src.services.identity.stores.identity_store import (
     AccountID,
@@ -28,7 +29,7 @@ class CreateAccountRequest(BaseModel):
     display_name: str = Field(min_length=1)
 
 
-class Account(BaseModel):
+class AccountResponse(BaseModel):
     id: str
     email: str
     display_name: str
@@ -36,7 +37,7 @@ class Account(BaseModel):
 
 
 class CreateAccountResponse(BaseModel):
-    account: Account
+    account: AccountResponse
     challenge_id: str
     passkey_creation_options: dict[str, Any]
 
@@ -69,7 +70,8 @@ class CreateSessionRequest(BaseModel):
 
 
 class CreateSessionResponse(BaseModel):
-    account: Account
+    account: AccountResponse
+    session_expires_at: datetime
 
 
 router = APIRouter()
@@ -92,7 +94,7 @@ async def create_account(
         outcome = await identity_service.create_account(new_account)
         account = outcome.account
         return CreateAccountResponse(
-            account=Account(
+            account=AccountResponse(
                 id=account.id,
                 email=account.email,
                 display_name=account.display_name,
@@ -184,17 +186,37 @@ async def create_authentication_challenge(
 )
 async def create_session(
     request: CreateSessionRequest,
+    response: Response,
     identity_service: IdentityService = Depends(identity_service),
 ) -> CreateSessionResponse:
     credential = parse_authentication_credential_json(request.credential_json)
-    account = await identity_service.authenticate(
+    session = await identity_service.authenticate(
         AccountID(request.account_id), ChallengeID(request.challenge_id), credential
     )
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=session.token,
+        httponly=True,
+        max_age=(session.expires_at - datetime.now(timezone.utc)).seconds,
+    )
+    account = session.account
     return CreateSessionResponse(
-        account=Account(
+        account=AccountResponse(
             id=account.id,
             email=account.email,
             display_name=account.display_name,
             created_at=account.created_at,
-        )
+        ),
+        session_expires_at=session.expires_at,
+    )
+
+
+@router.get("/accounts/me", description="Returns the currently signed-in account.")
+async def get_accounts_me(session: Session = Depends(session)) -> AccountResponse:
+    account = session.account
+    return AccountResponse(
+        id=account.id,
+        email=account.email,
+        display_name=account.display_name,
+        created_at=account.created_at,
     )
