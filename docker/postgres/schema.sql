@@ -41,3 +41,28 @@ create table identity.credentials (
 
 -- For fast selection of an account's existing credentials.
 create index account_credentials_idx on identity.credentials(account_id, created_at);
+
+-- Authenticated sessions. The expired_at field may be
+-- updated when revoking a session, but is done so idempotently.
+create table identity.sessions (
+    id text not null primary key,
+    account_id text not null references identity.accounts(id),
+    created_at timestamp with time zone not null,
+    expires_at timestamp with time zone not null
+);
+
+-- For fast selection of an account's active sessions.
+create index account_sessions_idx on identity.sessions(account_id, expires_at);
+
+-- Pre-joined view of sessions with associated account details.
+create view sessions_with_account as
+select 
+    s.id,
+    s.account_id,
+    s.created_at,
+    s.expires_at,
+    a.email as account_email,
+    a.display_name as account_display_name,
+    a.created_at as account_created_at
+from identity.sessions s 
+    inner join identity.accounts a on (s.account_id = a.id)

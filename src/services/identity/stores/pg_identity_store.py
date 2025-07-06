@@ -137,9 +137,12 @@ class PostgresIdentityStore:
     async def get_challenge(
         self, id: ChallengeID, include_expired: bool = False
     ) -> ChallengeRecord | None:
-        return await self._fetch_one(
-            self._challenges_sql.select_by_id_sql, [id], ChallengeRecord
+        sql = (
+            self._challenges_sql.select_by_id_sql
+            if include_expired
+            else self._challenges_sql.select_by_id_sql + " and expires_at >= now()"
         )
+        return await self._fetch_one(sql, [id], ChallengeRecord)
 
     async def create_credential(
         self,
