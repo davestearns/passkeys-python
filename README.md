@@ -1,7 +1,7 @@
 # Passkey Authentication in Python
 
 This repo contains example code for how to do
-[passkey authentication]((https://fidoalliance.org/passkeys/)) in a Python API
+[passkey authentication](https://fidoalliance.org/passkeys/) in a Python API
 server. To learn more about Passkeys, see my
 [Authenticated Sessions](https://davestearns.github.io/tutorials/authentication.html)
 tutorial.
