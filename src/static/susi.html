@@ -12,20 +12,42 @@
     <div class="container">
         <h1>Passkeys Demo</h1>
         <p>Test Email Address: <span id="email"></span></p>
+        <p><strong><span id="status">&nbsp;</span></strong></p>
         <p>
             <button id="btn_sign_up" class="btn waves-effect waves-light">Sign Up</button>
         </p>
         <p>
-            <button id="btn_sign_in" class="btn waves-effect waves-light">Sign In</button>
+            <button id="btn_sign_in" class="btn waves-effect waves-light disabled">Sign In</button>
         </p>
         <p>
-            <button id="btn_get_me" class="btn waves-effect waves-light">Who Am I?</button>
+            <button id="btn_get_me" class="btn waves-effect waves-light disabled">Who Am I?</button>
         </p>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
     <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
     <script>
+        async function post_json(url, body) {
+            const resp = await fetch(url, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(body)
+            })
+            resp_json = await resp.json()
+            if (!resp.ok) throw resp_json.detail
+            return resp_json
+        }
+
+        function set_status(status) {
+            document.getElementById("status").innerText = status
+        }
+
+        function enable_button(id) {
+            document.getElementById(id).classList.remove("disabled")
+        }
+
         document.addEventListener("DOMContentLoaded", () => {
             email = crypto.randomUUID() + "@test.com";
             document.getElementById("email").innerText = email
@@ -33,81 +55,79 @@
 
         document.getElementById("btn_sign_up").addEventListener("click", async () => {
             const email = document.getElementById("email").innerText
-            const accounts_resp = await fetch("/accounts", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    email: email, 
-                    display_name: "Tester" 
+            try {
+                set_status("POST /accounts...")
+                const accounts_resp_json = await post_json("/accounts", {
+                    email: email,
+                    display_name: "Tester"
                 })
-            })
-            const accounts_resp_json = await accounts_resp.json()
-            console.log(accounts_resp_json)
+                console.log("POST /accounts response", accounts_resp_json)
 
-            const authenticator_resp = await SimpleWebAuthnBrowser.startRegistration({
-                optionsJSON: accounts_resp_json.passkey_creation_options
-            })
-            console.log(authenticator_resp)
-            
-            const credentials_resp = await fetch(`/accounts/${accounts_resp_json.account.id}/credentials`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ 
-                    challenge_id: accounts_resp_json.challenge_id,
-                    credential_json: authenticator_resp
+                set_status("Creating passkey...")
+                const authenticator_resp = await SimpleWebAuthnBrowser.startRegistration({
+                    optionsJSON: accounts_resp_json.passkey_creation_options
                 })
-            })
-            console.log(credentials_resp)
-            alert(`Signed Up Successfully as ${accounts_resp_json.account.email}`)
+                console.log("Authenticator response", authenticator_resp)
+
+                const url = `/accounts/${accounts_resp_json.account.id}/credentials`
+                set_status(`POST ${url}...`)
+                const credentials_resp_json = await post_json(url, {
+                    challenge_id: accounts_resp_json.challenge_id,
+                    credential_json: authenticator_resp,
+                })
+                console.log(credentials_resp_json)
+                set_status(`Signed Up successfully as ID ${accounts_resp_json.account.id}`)
+                enable_button("btn_sign_in")
+            } catch (err) {
+                console.error(err)
+                set_status(`Error: ${err}`)
+            }
         })
 
         document.getElementById("btn_sign_in").addEventListener("click", async () => {
             const email = document.getElementById("email").innerText
-            const challenges_resp = await fetch("/sessions/challenges", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    email: email 
+            try {
+                set_status("POST /sessions/challenges...")
+                const challenges_resp_json = await post_json("/sessions/challenges", {
+                    email: email
                 })
-            })
-            const challenges_resp_json = await challenges_resp.json()
-            console.log(challenges_resp_json)
+                console.log("POST /sessions/challenges response", challenges_resp_json)
 
-            const authenticator_resp = await SimpleWebAuthnBrowser.startAuthentication({
-                optionsJSON: challenges_resp_json.passkey_authentication_options
-            })
-            console.log(authenticator_resp)
+                set_status("Authenticating...")
+                const authenticator_resp = await SimpleWebAuthnBrowser.startAuthentication({
+                    optionsJSON: challenges_resp_json.passkey_authentication_options
+                })
+                console.log(authenticator_resp)
 
-            const sessions_resp = await fetch("/sessions", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
+                set_status("POST /sessions...")
+                const sessions_resp_json = await post_json("/sessions", {
                     account_id: challenges_resp_json.account_id,
                     challenge_id: challenges_resp_json.challenge_id,
                     credential_json: authenticator_resp
                 })
-            })
 
-            const sessions_resp_json = await sessions_resp.json()
-            console.log(sessions_resp_json)
-            alert(`Signed In Successfully as ${sessions_resp_json.account.email}`)
+                console.log(sessions_resp_json)
+                set_status(`Signed In Successfully as ${sessions_resp_json.account.email}`)
+                enable_button("btn_get_me")
+            } catch (err) {
+                console.error(err)
+                set_status(`Error: ${err}`)
+            }
         })
 
         document.getElementById("btn_get_me").addEventListener("click", async () => {
-            const get_me_resp = await fetch("/accounts/me", {
-                credentials: "same-origin"
-            })
-            const get_me_json = await get_me_resp.json()
-            console.log(get_me_json)
-            alert(`You are signed in as ${get_me_json.email}`)
+            try {
+                const get_me_resp = await fetch("/accounts/me", {
+                    credentials: "same-origin"
+                })
+                const get_me_json = await get_me_resp.json()
+                if (!get_me_resp.ok) throw get_me_json.detail
+                console.log(get_me_json)
+                set_status(`You are signed in as ${get_me_json.email} with ID=${get_me_json.id}`)
+            } catch (err) {
+                console.err(err)
+                set_status(`Error: ${err}`)
+            }
         })
     </script>
 </body>
