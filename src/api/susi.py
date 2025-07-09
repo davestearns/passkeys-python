@@ -169,9 +169,13 @@ async def create_authentication_challenge(
     request: CreateAuthenticationChallengeRequest,
     identity_service: IdentityService = Depends(identity_service),
 ) -> CreateAuthenticationChallengeResponse:
-    outcome = await identity_service.create_authentication_challenge(
-        email=request.email
-    )
+    try:
+        outcome = await identity_service.create_authentication_challenge(
+            email=request.email
+        )
+    except InvalidAccountError:
+        raise HTTPException(404, f"No account with email '{request.email}'.")
+
     return CreateAuthenticationChallengeResponse(
         account_id=outcome.account_id,
         challenge_id=outcome.challenge_id,
