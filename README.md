@@ -49,7 +49,7 @@ terminal window, but also allow you to see log output while it runs.
 In a different terminal window, start the server using this command:
 
 ```bash
-uvicorn src.main:app --ssl-keyfile key.pem --ssl-certfile cert.pem
+uv run uvicorn src.main:app --ssl-keyfile key.pem --ssl-certfile cert.pem
 ```
 
 In your browser, navigate to <https://localhost:8000>. The page that is returned
